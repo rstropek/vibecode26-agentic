@@ -30,6 +30,7 @@ API list prices from `claude -p`, less with a subscription.
 | 7 | script: skills | ~30 s | – | – |
 | 8 | test harness | 3.1 min | 22 | $0.79 |
 | 9 | QA script and CI | 4.3 min | 27 | $0.88 |
+| 10 | Drizzle, grounding | 5.9 min | 50 | $1.87 |
 
 ## Before the workshop
 
@@ -407,3 +408,55 @@ gh run view --web
 
 If it breaks: CI red but local green → `gh run view --log-failed`, paste it into the
 session.
+
+## Step 10: grounding in current docs
+
+**Goal:** Drizzle and SQLite with one seam, and an agent that looks things up instead of
+remembering them.
+
+<!-- prompt: step10 -->
+```text
+Add persistence: Drizzle ORM on SQLite via @libsql/client, with DATABASE_URL from .env (already set to file:./data/app.db).
+
+- One server-only module lib/db.ts exports the Drizzle instance; nothing else opens the database.
+- Migrations with drizzle-kit: `npm run db:generate`, `npm run db:migrate`, and `npm run db:reset` (deletes the local database file and migrates a fresh one). No domain tables yet: todos arrive later together with the architecture, auth tables with authentication.
+- A Vitest test migrates a temporary database file and proves the connection works. The e2e server gets its own migrated temp database.
+- Drizzle's API has changed a lot. Start at https://orm.drizzle.team/llms.txt and follow the relevant links before coding.
+- Add a "Researching docs" section to AGENTS.md: which source to use for what (vendor llms.txt files like Drizzle's, the docs in node_modules/next/dist/docs, the installed skills, the ctx7 CLI from the find-docs skill as the fallback for any other library).
+- Write tech-docs/database.md.
+
+Done when the QA script is green. Then commit directly to main and push.
+```
+
+Rehearsal: 5.9 min, 50 turns, $1.87. The agent read `llms.txt` and six doc pages before
+writing code.
+
+Demo:
+
+```bash
+curl -s https://orm.drizzle.team/llms.txt | head -30    # what the agent read first
+npm run db:reset && ls -la data/
+git status --short                                      # nothing from data/
+gh run watch                                            # first change through the QA loop and CI
+```
+
+- **Four ways to ground the agent**, each reaching a different source:
+  - **`llms.txt`**: a vendor-curated, agent-readable index at a stable URL. One URL in
+    the prompt beats twenty lines of pasted docs, and it's current every time.
+  - **Docs in `node_modules`**: exact for the installed version (Next.js).
+  - **Skills**: the vendor's playbook (Mastra, CopilotKit).
+  - **Context7** (`ctx7` CLI from `find-docs`): the fallback for everything else.
+- The "Researching docs" section makes it stick: later prompts don't have to repeat it.
+- **One seam for the database**: `lib/db.ts`. Auth, todos, and agent memory land in the
+  same file later, and exactly one module interprets `DATABASE_URL`.
+- Tests and e2e run on temp files, dev on `data/app.db`. SQLite gives isolation for free.
+- `npm run db:reset` is part of recovery: the database isn't in git.
+- Rehearsal finding: Drizzle's docs describe v1 (release candidate) while npm `latest` is
+  still 0.45. The agent followed the docs, pinned `1.0.0-rc.4` exactly, and said so in
+  its summary. Grounding beats training data, and the summary is where you review it.
+- Rehearsal finding, security: the agent printed `.env` while checking the setup, and
+  then warned that the OpenRouter key had been in its output. **Everything in `.env` is
+  readable by the agent and reaches the model.** Spend-capped keys only (more in the
+  sandbox step).
+
+If it breaks: `DATABASE_URL is not set` → `.env` is missing; `cp .env.example .env`.
