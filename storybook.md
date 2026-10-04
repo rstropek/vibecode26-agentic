@@ -32,6 +32,7 @@ API list prices from `claude -p`, less with a subscription.
 | 9 | QA script and CI | 4.3 min | 27 | $0.88 |
 | 10 | Drizzle, grounding | 5.9 min | 50 | $1.87 |
 | 11 | authentication | 9.1 min | 65 | $3.06 |
+| 12 | architecture first: todo core | 5.3 min | 28 | $1.51 |
 
 ## Before the workshop
 
@@ -560,15 +561,15 @@ Implement the todo core described in tech-docs/architecture.md: the todos table 
 Done when the QA script is green. Then commit directly to main and push.
 ```
 
-Rehearsal: TODO (headless, without plan mode).
+Rehearsal: 5.3 min, 28 turns, $1.51 (headless, without plan mode). No questions, no
+deviations; 38 tests.
 
 Demo:
 
 ```bash
 git diff HEAD~1 -- tech-docs/architecture.md     # what the agent added to our article
-npm run db:reset && npm run db:seed
-sqlite3 data/app.db "select title, done, due_date, created_at from todos order by created_at" 2>/dev/null \
-  || npx drizzle-kit studio
+npm run db:reset && npm run db:seed              # demo@todo-cat.dev / cat-person-2026
+npx drizzle-kit studio                           # browse the todos table
 ```
 
 - **Three artifacts, three jobs:** the architecture says *how* we build (human, before
@@ -582,5 +583,9 @@ sqlite3 data/app.db "select title, done, due_date, created_at from todos order b
   authorization test suite for every adapter that comes later.
 - "Ask first if you deviate" turns silent drift into a question.
 - The seed gives the afternoon a realistic list, including "last week".
+- Read the "choices you may want to review" part of the summary. In the rehearsal:
+  random UUID ids (unguessable, but long to type in a CLI), a clock parameter only
+  tests and the seed use, list order, case-insensitive search for ASCII only. Each is
+  a decision a reviewer should make, not discover.
 
 If it breaks: plan looks wrong → say what's wrong in plan mode, don't approve and fix later.
