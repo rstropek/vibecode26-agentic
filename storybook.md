@@ -34,6 +34,7 @@ API list prices from `claude -p`, less with a subscription.
 | 11 | authentication | 9.1 min | 65 | $3.06 |
 | 12 | architecture first: todo core | 5.3 min | 28 | $1.51 |
 | 13 | REST API | 3.1 min | 21 | $0.93 |
+| 15 | `todo-cat` CLI | 16.1 min | 80 | $5.08 |
 
 ## Before the workshop
 
@@ -668,3 +669,84 @@ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "authorization: Bearer $TO
 - Everything the CLI does in the next step is one of these requests.
 
 If it breaks: `jq: command not found` → `sudo apt install jq` (or drop the `| jq` parts).
+
+## Step 15: the `todo-cat` CLI
+
+**Goal:** the second door. A CLI in its own workspace that logs in like `gh auth login`
+and is built for agents first.
+
+<!-- prompt: step15 -->
+```text
+Add the todo-cat CLI in the cli/ workspace (package todo-cat-cli, binary `todo-cat`): a client of the REST API, built on commander.js 15. Its main users are AI agents working for a human; humans use it too.
+
+- Commands: one per REST use case with short names (e.g. `todo-cat list`, `add`, `done`, `delete`), plus `login`, `logout`, `whoami`. Requests and responses use the contract schemas; nothing is re-declared.
+- `login` uses Better Auth's device authorization flow, like `gh auth login`: print the code and the URL, never open a browser, poll until approved. The web app gets the page where a signed-in user approves the code. The token lives in a file with owner-only permissions in the user's config directory, never in the repo and never printed. `logout` also revokes the session on the server.
+- Agent-friendly: `--json` output besides readable text, errors on stderr with the API's error code, meaningful exit codes (listed in --help), never prompts, `delete` requires `--yes`, --help with examples.
+- The server URL defaults to http://localhost:3000, overridable with an environment variable. Runnable as `npx todo-cat` from the repo root after npm install.
+- Tests: a Vitest integration test drives the built CLI end to end against a real server that the test starts on a spare port with a temp database and a redirected config directory: login (approve the device code through Better Auth's test utils, no browser), whoami, add, list, done, delete, logout, and whoami failing afterwards.
+- Write tech-docs/cli.md. The QA script covers the cli workspace.
+
+Done when the QA script is green. Then commit directly to main and push.
+```
+
+Rehearsal: 16.1 min, 80 turns, $5.08. The longest Day 1 prompt: context hygiene fits
+in the wait.
+
+While it runs: [step 16](#step-16-context-hygiene).
+
+Demo (dev server running, demo user signed in in the browser):
+
+```bash
+npx todo-cat --help
+npx todo-cat login                     # prints a code and a URL; approve it in the browser
+npx todo-cat whoami
+npx todo-cat list
+npx todo-cat add "feed the cat"
+npx todo-cat list --json | jq '.[0]'
+npx todo-cat delete "$(npx todo-cat list --json | jq -r '.[0].id')"; echo "exit $?"   # --yes missing
+npx todo-cat list --status nope; echo "exit $?"                                         # usage error
+ls -la ~/.config/todo-cat/             # where the token went
+```
+
+- **A CLI is the cheapest agent interface there is**: discoverable (`--help`),
+  scriptable, composable (`--json | jq`), no registration, no tokens until used.
+  Humans and scripts use the same tool.
+- **Agent-friendly** = JSON on stdout, errors on stderr, exit codes, never a prompt,
+  `--yes` for destructive commands. Read `--help` the way an agent would.
+- **The device flow** is how a terminal logs in without a callback: code, URL, poll,
+  approve in a browser session that already exists. Better Auth ships the endpoints and
+  leaves the approval page to you.
+- **Secrets on a developer machine**: one file, mode 600, in the config directory.
+  `logout` revokes on the server, which is the part people forget.
+- The contract pays off: the CLI parses every response with the server's schemas.
+- The workspace from step 4 was waiting for this: no restructuring, the QA script
+  and CI already know about it.
+- From the rehearsal's summary: `show`, `edit`, `reopen` added so every REST use case
+  has a command; exit codes 0 to 7 in `--help`; tokens keyed by server URL so a token
+  never goes to another server; `/login?next=` limited to local paths (open-redirect
+  check nobody asked for); a committed bin shim because npm skips linking a bin whose
+  file doesn't exist yet. Each one is a review question.
+
+If it breaks: `npx todo-cat` not found → `npm install` at the root links workspace
+binaries into `node_modules/.bin`.
+
+## Step 16: context hygiene
+
+**Goal:** no code. While step 15 runs: the context window decides quality and cost.
+
+In the session that's running step 15 (or any long one): `/context`.
+
+- **Everything the agent reads stays in the window**: every file, every test run's
+  output, every doc page. Old instructions compete with 200 KB of test output.
+- `/compact focus on <what matters>` replaces history with a summary that keeps what you
+  name. `Esc Esc` / `/rewind` can summarize just a stretch.
+- **`/clear` between unrelated tasks.** `AGENTS.md` and the skills come back by
+  themselves; an hour of irrelevant history doesn't.
+- **The two-corrections rule**: corrected the agent twice on the same point? The
+  context is full of failed attempts. `/clear` and write a better first prompt.
+- `/btw` for side questions that don't need to stay in the history.
+- **Subagents are a context firewall**: "use a subagent to find out how Better Auth
+  stores device codes" keeps the file reads out of your window. Only the summary comes
+  back.
+- **Cost follows context**: every request sends the whole window. A fat session costs
+  more on every turn.
