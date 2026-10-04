@@ -35,6 +35,7 @@ API list prices from `claude -p`, less with a subscription.
 | 12 | architecture first: todo core | 5.3 min | 28 | $1.51 |
 | 13 | REST API | 3.1 min | 21 | $0.93 |
 | 15 | `todo-cat` CLI | 16.1 min | 80 | $5.08 |
+| 17 | skill for the CLI | 2.3 min | 4 (+2 subagents) | $1.08 |
 
 ## Before the workshop
 
@@ -750,3 +751,45 @@ In the session that's running step 15 (or any long one): `/context`.
   back.
 - **Cost follows context**: every request sends the whole window. A fat session costs
   more on every turn.
+
+## Step 17: a skill for the CLI
+
+**Goal:** the knowledge `--help` can't give: workflows, order of steps, sharp edges.
+Written with `skill-creator`, tested with a realistic request.
+
+Before the prompt: dev server running, `npm run db:seed` done, `npx todo-cat login`
+approved as the demo user.
+
+<!-- prompt: step17 -->
+```text
+Use the skill-creator skill to write a project skill `todo-cat-cli` that teaches an agent to manage a person's to-do list with our CLI.
+
+- Workflows and pitfalls, not a copy of --help: when to use it; the login prerequisite and what to tell the user when it's missing (never work around it); finding todos by title before acting on an id; `--json` plus jq for questions about the list; due dates versus creation dates ("last week"); destructive commands only when the user asks for them.
+- `todo-cat --help` is the source of truth when the skill and the help disagree.
+- Keep the evaluation light: two realistic requests run by a subagent with the skill and a shell, against the running dev server where the CLI is already logged in. No benchmark, no review viewer. Don't leave test todos behind.
+
+Done when the QA script is green. Then commit directly to main and push.
+```
+
+Rehearsal: 2.3 min, 4 turns plus two subagent runs, $1.08. The subagent's requests:
+"tick off the Vienna train tickets, remind me to buy flea treatment for Lissie by next
+Friday" and "anything overdue, and what did I put on the list last week?" Both right,
+test todos cleaned up afterwards.
+
+Demo:
+
+```bash
+cat .claude/skills/todo-cat-cli/SKILL.md
+```
+
+- **Skill vs. help**: the skill says *when* and *in which order*; `--help` says *how*.
+  Open the skill and cut anything that repeats the help.
+- **Meta-skill in action**: `skill-creator` brings the form (pushy description so it
+  fires on "my list", "remind me to"), the agent brings the content.
+- **The subagent is the eval**: an agent that has never seen the CLI, with the skill and
+  a shell. Its feedback usually fixes at least one wrong claim in the first draft.
+- The login rule ("the login is the user's consent, never work around it") is the
+  whole security model of the CLI door.
+
+If it breaks: the subagent says "not logged in" → `npx todo-cat login` again; device
+codes expire after 30 minutes.
