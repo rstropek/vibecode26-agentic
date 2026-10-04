@@ -7,7 +7,7 @@ set -euo pipefail
 PROMPT_FILE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 LOG="$(pwd)/logs/$2.jsonl"
 shift 2
-cd "$(readlink -f ../solution)"   # real path: the parent folder must not contain the storybook
+cd "$(readlink -f "${AGENT_DIR:-../solution}")"   # real path: the parent folder must not contain the storybook; AGENT_DIR: e.g. a worktree
 START=$(date +%s)
 CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 ENABLE_CLAUDEAI_MCP_SERVERS=false claude -p "$(cat "$PROMPT_FILE")" --model claude-opus-5-5 --effort high \
   --permission-mode auto --strict-mcp-config "$@" --output-format stream-json --verbose > "$LOG" 2>&1 || echo "claude exited with $?"

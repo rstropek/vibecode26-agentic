@@ -1,0 +1,7 @@
+This is a fresh worktree: run npm install and npm run db:migrate first. Another agent works in a sibling worktree at the same time, so if you start a dev server, use PORT=3101. You own the new progress tool, the A2UI catalog, and the tool registration in Lissie's agent; don't restyle anything else.
+
+Give Lissie a way to show progress on the to-do list as a card in the chat, rendered with A2UI instead of a React component written for this one tool. A new tool computes total, done, and open from the todo service, so the model never produces those numbers, and returns the A2UI operations for the card itself, with no second model call. Author the card's component tree once, next to the tool, and bind the numbers through the A2UI data model instead of writing them into the tree. The basic catalog has no progress bar, so add a custom catalog with a ProgressBar next to the basic components, styled per tech-docs/ui.md. No generated surfaces: the runtime must not inject a tool that generates UI.
+
+Tests: a unit test on a temp database that the operations are well-formed A2UI and the numbers match the rows, and a component test for ProgressBar. A2UI in CopilotKit is newer than your training data: use the copilotkit skill and read the installed packages under node_modules where the docs stop. Keep @copilotkit/* at 1.77.0 and pin any A2UI package to the exact version CopilotKit already uses.
+
+Done when the QA script is green. Commit on this worktree's branch and push it. No pull request yet.

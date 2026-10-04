@@ -43,6 +43,12 @@ API list prices from `claude -p`, less with a subscription.
 | 23 | tool calling + PR | 15.5 min | 109 | $5.82 |
 | 25 | first design + todo list | 19.4 min | 85 | $4.69 |
 | 25b | `impeccable init` | 1.9 min | 11 | $0.52 |
+| 26a | worktree: A2UI progress card | 17.3 min | 135 | $6.69 |
+| 26b | worktree: impeccable critique + polish (parallel) | ~21 min | 79 (+2 subagents) | $7.34 |
+| 27 | background `/code-review` | 2.5 min | – | $0.87 |
+| 27b | fix the review findings | 11.6 min | 64 | $3.43 |
+| 28a | PR for the card | 1.7 min | 7 | $0.39 |
+| 28b | rebase the polish branch | 2.2 min | 11 | $0.38 |
 
 ## Before the workshop
 
@@ -1188,3 +1194,198 @@ ls .impeccable* PRODUCT.md DESIGN.md 2>/dev/null
 
 If it breaks: the new design ignores the chat → CopilotKit ships its own CSS; point the
 agent at the gotchas in `tech-docs/agent.md`.
+
+## Step 26: parallel agents in worktrees
+
+**Goal:** two agents at once, each in its own checkout, on disjoint files.
+
+Once, on `main`: worktrees are fresh checkouts, and git-ignored files don't come along.
+`.worktreeinclude` names the ones Claude Code copies in.
+
+```bash
+printf '.env\n' > .worktreeinclude
+printf '\n# Claude Code worktrees\n.claude/worktrees/\n' >> .gitignore
+git add .worktreeinclude .gitignore && git commit -m "Worktree setup" && git push
+```
+
+Two terminals in the repo root:
+
+```bash
+claude --worktree a2ui-card
+```
+
+```bash
+claude --worktree polish
+```
+
+Terminal one, the A2UI progress card:
+
+<!-- prompt: step26a -->
+```text
+This is a fresh worktree: run npm install and npm run db:migrate first. Another agent works in a sibling worktree at the same time, so if you start a dev server, use PORT=3101. You own the new progress tool, the A2UI catalog, and the tool registration in Lissie's agent; don't restyle anything else.
+
+Give Lissie a way to show progress on the to-do list as a card in the chat, rendered with A2UI instead of a React component written for this one tool. A new tool computes total, done, and open from the todo service, so the model never produces those numbers, and returns the A2UI operations for the card itself, with no second model call. Author the card's component tree once, next to the tool, and bind the numbers through the A2UI data model instead of writing them into the tree. The basic catalog has no progress bar, so add a custom catalog with a ProgressBar next to the basic components, styled per tech-docs/ui.md. No generated surfaces: the runtime must not inject a tool that generates UI.
+
+Tests: a unit test on a temp database that the operations are well-formed A2UI and the numbers match the rows, and a component test for ProgressBar. A2UI in CopilotKit is newer than your training data: use the copilotkit skill and read the installed packages under node_modules where the docs stop. Keep @copilotkit/* at 1.77.0 and pin any A2UI package to the exact version CopilotKit already uses.
+
+Done when the QA script is green. Commit on this worktree's branch and push it. No pull request yet.
+```
+
+Terminal two, impeccable on the list and the auth pages:
+
+<!-- prompt: step26b -->
+```text
+This is a fresh worktree: run npm install and npm run db:migrate first. Another agent works in a sibling worktree at the same time, so if you start a dev server, use PORT=3102. You own the todo list, the auth pages (login, signup, device), the header, and app/globals.css; don't touch Lissie's agent, her tools, or the chat.
+
+Use the impeccable skill: first critique the todo list and the auth pages against PRODUCT.md and tech-docs/ui.md, then polish what the critique found. Check the result in screenshots of the running app (light and dark, desktop and phone).
+
+Done when the QA script is green. Commit on this worktree's branch and push it. No pull request yet.
+```
+
+Rehearsal, both at once: 26a 17.3 min, 135 turns, $6.69; 26b ~21 min, 79 turns plus
+two subagents, $7.34. Worktree isolation refused about a dozen shell commands it couldn't
+prove stayed inside the worktree; the agents rewrote them. 26a hit the classic zod 3/4
+clash (A2UI binds only zod 3 schemas) and pinned `@copilotkit/a2ui-renderer` 1.77.0 and
+`@a2ui/web_core` 0.10.4, the versions CopilotKit already uses. 26b's critique scored
+28/40; impeccable's detector found nothing, the browser measurements did: done todos
+unreadable in dark mode, the list off the first screen on phones, focus rings at 1.3:1.
+
+While both run: the generative UI spectrum.
+
+- **Controlled**: a React component per tool (step 23's tool lines). Full control, one
+  component per feature.
+- **Declarative**: the agent sends a component tree from a catalog you own (A2UI, this
+  step). New cards without frontend code, but only from parts on your shelf.
+- **Open-ended**: the model generates the UI (HTML, code). Anything is possible,
+  including things you didn't want. Not today.
+
+Talking points:
+
+- **Worktrees isolate files, and only files.** Each gets its own directory, branch
+  (`worktree-<name>`), `node_modules`, and SQLite file. They share the repo history, the
+  remote, and the machine's ports. That's why each prompt names a port, and why the
+  QA script's e2e port and dist dir are per checkout since step 9.
+- **Disjoint write areas** matter for agents as much as for people. The prompts name what
+  each agent owns. `AGENTS.md` and the tech docs will conflict anyway, because both agents
+  follow the maintenance rule.
+- The numbers in the card never pass through the model: the tool counts rows and puts
+  them into the A2UI data model; the tree only holds pointers.
+
+If it breaks: `npm install` fails in a worktree because `.env` is missing → the
+`.worktreeinclude` commit isn't on the branch the worktree started from.
+
+## Step 27: a review loop in the background
+
+**Goal:** a fresh pair of eyes on the first finished branch, while the room watches the
+other agent.
+
+When the first worktree is done, start a reviewer in the background from the main
+checkout (branch name as Claude Code created it; `git branch` shows it):
+
+```bash
+claude --bg "/code-review high worktree-a2ui-card"
+claude agents                  # the background session and its status
+claude logs <id>               # peek without attaching
+claude attach <id>             # open it when it's done
+```
+
+The same review, headless (that's how it was rehearsed):
+
+<!-- prompt: step27 -->
+```text
+/code-review high worktree-a2ui-card
+```
+
+Rehearsal: 2.5 min, $0.87, eight findings. The top one, traced in `node_modules`: with
+two tools in one step, the live card got a different surface id than the replayed one.
+Also: no running/failed line for the new tool, all rows loaded to count three numbers,
+the whole component tree sent back to the model as the tool result.
+
+Then, in the worktree's session, fix what holds up:
+
+<!-- prompt: step27b -->
+```text
+A reviewer found the issues below in this branch. Check each one against the code; fix the ones that hold, say why for the ones that don't. Done when the QA script is green. Then commit on this branch and push.
+
+<paste the findings>
+```
+
+Rehearsal 27b: 11.6 min, 64 turns, $3.43. All eight held. It reproduced the id bug with
+the real middleware first, then fixed the cause (its own small card middleware, one
+function builds the card live and on replay) instead of special-casing the id; it
+declined one suggestion (reuse a private helper) and said why.
+
+- **Fresh context is the point.** The reviewer has no memory of why the code looks the
+  way it does. It reads the diff the way your colleague would. The author's session
+  would defend its own choices.
+- Background sessions (`--bg`) run while you keep working; `claude agents` is the
+  dashboard. Subagents do the same inside one session, as a context firewall.
+- A finding is a claim. The author checks it against the code, a human approves the
+  merge.
+
+If it breaks: the review finds nothing → effort `high` or `max`, or point it at the
+risky part ("the A2UI data binding and the route guard").
+
+## Step 28: merge one, rebase the other
+
+**Goal:** what parallel work costs in git, and CI as the referee.
+
+In the A2UI worktree's session:
+
+<!-- prompt: step28a -->
+```text
+Open a pull request against main for this branch, with a description a reviewer can use: what changed, the review findings and how each was resolved, how to test it.
+```
+
+Rehearsal 28a: 1.7 min, 7 turns, $0.39 (fresh session headless; on stage the session
+still knows the findings).
+
+Read it, wait for `qa`, merge:
+
+```text
+!gh pr checks --watch && gh pr merge --squash --delete-branch
+```
+
+Then in the polish worktree's session, which is now behind `main` and touched some of the
+same files:
+
+<!-- prompt: step28b -->
+```text
+main has moved: the A2UI progress card was merged. Rebase this branch onto origin/main and resolve the conflicts. Keep both sides' intent: the card stays as merged, the polish stays as you made it; where both changed AGENTS.md or the tech docs, keep both facts and drop duplicates. Done when the QA script is green. Then force-push this branch with lease and open a pull request against main.
+```
+
+Rehearsal 28b: 2.2 min, 11 turns, $0.38. No conflicts at all: the only file both
+branches touched was `tech-docs/ui.md`, and git merged it cleanly. Disjoint write areas
+did their job. On stage, expect `AGENTS.md` to conflict sometimes; the rule in the
+prompt decides how it gets resolved.
+
+Merge it, then clean up from the main checkout (after exiting both worktree sessions):
+
+```bash
+gh pr merge --squash --delete-branch <number>
+git switch main && git pull
+git worktree list
+git worktree remove .claude/worktrees/a2ui-card
+git worktree remove .claude/worktrees/polish
+git branch -D worktree-a2ui-card worktree-polish
+git push origin --delete worktree-a2ui-card worktree-polish   # if gh couldn't delete them
+git fetch --prune
+```
+
+- **Parallel work is cheap while it runs and expensive when it lands.** Disjoint write
+  areas kept the code conflicts small; `AGENTS.md` and the tech docs conflict anyway,
+  because both agents follow the maintenance rule.
+- The agent resolves conflicts by reading both sides and choosing. Its choice is only
+  as good as your rule ("keep both facts").
+- CI is the referee: `strict` branch protection means the rebased branch has to be
+  green against the new `main` before it can merge.
+- In the browser afterwards: "How am I doing?" draws the card ("Progress, such as it
+  is", 6 of 16, 10 still open) and Lissie's one-line verdict, on the polished list.
+- Claude Code locks a worktree while a session runs in it: "cannot remove a locked
+  working tree" → exit the session, or `git worktree unlock <path>`.
+
+`gh pr merge --delete-branch` can't delete a local branch a worktree still uses; that's
+what the cleanup block is for.
+
+If it breaks: the rebase goes in circles → `git rebase --abort`, merge `origin/main`
+into the branch instead; the history is less pretty, the result is the same.
