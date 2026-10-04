@@ -27,6 +27,8 @@ API list prices from `claude -p`, less with a subscription.
 | 4 | script: scaffold | ~30 s | – | – |
 | 5 | script: onto GitHub | ~5 s | – | – |
 | 6 | `AGENTS.md` and tech docs | 0.8 min | 7 | $0.26 |
+| 7 | script: skills | ~30 s | – | – |
+| 8 | test harness | 3.1 min | 22 | $0.79 |
 
 ## Before the workshop
 
@@ -330,7 +332,7 @@ Set up our test harness, before any feature exists: Vitest for unit and integrat
 Done when `npm test`, `npm run test:e2e`, and `npm run lint` pass. Then commit directly to main and push.
 ```
 
-Rehearsal: TODO.
+Rehearsal: 3.1 min, 22 turns, $0.79.
 
 Demo:
 
@@ -351,7 +353,9 @@ git show --stat HEAD
 - No config files, plugins, or ports in the prompt. That's the agent's job.
 - Tests before features: the tests are the agent's feedback loop, and yours when you
   review agent code.
-- Read the summary: it reports the decisions it made (and sometimes that a bundled doc
-  is itself stale).
+- Read the summary: it reports the decisions it made. In the rehearsal: Next 16 refuses
+  a second `next dev` in the same folder, so the e2e server builds into `.next-e2e/`
+  (`NEXT_DIST_DIR`), and Playwright asks the OS for a free port. Nobody asked for that;
+  the agent ran e2e next to a running `npm run dev` and found out.
 
 If it breaks: Playwright browser missing → `npx playwright install chromium`.
