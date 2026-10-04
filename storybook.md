@@ -256,3 +256,102 @@ Then, in a fresh `claude` session: `/context` → "Memory files" lists `AGENTS.m
   project's decisions.
 
 If it breaks: the agent works on a branch → `git switch main && git merge -` and push.
+
+## Step 7: install skills
+
+**Goal:** current expertise for the fast-moving parts of the stack, and some taste.
+
+Script ([`materials/skills.sh`](materials/skills.sh)), in the repo root:
+
+```bash
+#!/usr/bin/env bash
+# Step 7: install skills (project scope) for Claude Code. Run in the repo root.
+set -euo pipefail
+A=(--agent claude-code -y)
+
+# Tech: current docs for any library (ctx7 CLI), the vendors' own playbooks for Mastra and CopilotKit
+npx -y skills@1.7.0 add upstash/context7 --skill find-docs "${A[@]}"
+npx -y skills@1.7.0 add mastra-ai/skills --skill mastra "${A[@]}"
+npx -y skills@1.7.0 add CopilotKit/CopilotKit --skill copilotkit "${A[@]}"
+
+# Meta (write your own skills) and design (taste for UI work)
+npx -y skills@1.7.0 add anthropics/skills --skill skill-creator --skill frontend-design "${A[@]}"
+
+# impeccable: design commands (init, critique, polish, ...). No hooks: we enforce quality with the QA script.
+npx -y impeccable@4.1.0 install --project --providers=claude --no-hooks --yes
+# its engine binary is platform-specific (18 MB); the launcher downloads it on first use
+printf '\n# impeccable engine binary (platform-specific, downloaded on first use)\n.claude/skills/impeccable/scripts/bin/\n' >> .gitignore
+
+# Skills are vendored code: Biome must not lint or reformat them
+node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync("biome.json","utf8"));j.files.includes.push("!.claude","!.agents");fs.writeFileSync("biome.json",JSON.stringify(j,null,2)+"\n")'
+npx biome format --write biome.json > /dev/null
+npm run lint --silent
+
+git add -A
+git commit -qm "Install skills"
+git push -q
+ls .claude/skills
+```
+
+Rehearsal: ~30 s.
+
+Demo:
+
+```bash
+npx -y skills@1.7.0 add mastra-ai/skills -l     # what a repo offers before you install
+head -5 .claude/skills/mastra/SKILL.md          # name + description: the only part in context
+cat skills-lock.json                            # pinned like a lockfile
+```
+
+Then a fresh `claude` and `/context` → the skills line is small.
+
+- **A skill is a folder with a `SKILL.md`**: name and description in the front matter,
+  instructions in the body, optional scripts. Only name and description sit in
+  context; the body loads when the task matches. Progressive disclosure, so many
+  skills cost little. `/skill-doctor` shows which ones never fire.
+- Kinds: **tech** (`find-docs` = Context7 for any library, `mastra` and `copilotkit`
+  from the vendors themselves), **meta** (`skill-creator`, we use it on the afternoon),
+  **design** (`frontend-design` and impeccable carry taste, Day 2).
+- Skills run with the agent's permissions. Read them before you install them, like
+  any dependency. [skills.sh](https://skills.sh) shows a security assessment.
+- Committed with `skills-lock.json`: every teammate's agent gets the same expertise.
+
+If it breaks: GitHub rate limit on `skills add` → `gh auth login` and rerun the line.
+
+## Step 8: anatomy of a prompt that holds up
+
+**Goal:** a test harness before any feature, and a prompt shape we use for the rest of
+the two days.
+
+<!-- prompt: step08 -->
+```text
+Set up our test harness, before any feature exists: Vitest for unit and integration tests (`npm test`) and Playwright for end-to-end tests (`npm run test:e2e`, Chromium only, starting its own dev server on a spare port). This Next.js version may differ from what you know, so read its testing guides in node_modules/next/dist/docs/ first. Add one real smoke test for each. Write tech-docs/testing.md (strategy, commands, gotchas) and add it to the AGENTS.md index.
+
+Done when `npm test`, `npm run test:e2e`, and `npm run lint` pass. Then commit directly to main and push.
+```
+
+Rehearsal: TODO.
+
+Demo:
+
+```bash
+npm test
+npm run test:e2e
+cat tech-docs/testing.md
+git show --stat HEAD
+```
+
+- Take the prompt apart, five parts:
+  - **outcome**: the harness and two npm scripts,
+  - **constraints**: Chromium only, its own server, a spare port,
+  - **docs pointer**: the testing guides in `node_modules`,
+  - **verification**: one real test each,
+  - **completion condition**: "Done when … Then commit and push." Every prompt from here
+    on ends like that.
+- No config files, plugins, or ports in the prompt. That's the agent's job.
+- Tests before features: the tests are the agent's feedback loop, and yours when you
+  review agent code.
+- Read the summary: it reports the decisions it made (and sometimes that a bundled doc
+  is itself stale).
+
+If it breaks: Playwright browser missing → `npx playwright install chromium`.
