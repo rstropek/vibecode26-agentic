@@ -33,6 +33,7 @@ API list prices from `claude -p`, less with a subscription.
 | 10 | Drizzle, grounding | 5.9 min | 50 | $1.87 |
 | 11 | authentication | 9.1 min | 65 | $3.06 |
 | 12 | architecture first: todo core | 5.3 min | 28 | $1.51 |
+| 13 | REST API | 3.1 min | 21 | $0.93 |
 
 ## Before the workshop
 
@@ -589,3 +590,81 @@ npx drizzle-kit studio                           # browse the todos table
   a decision a reviewer should make, not discover.
 
 If it breaks: plan looks wrong → say what's wrong in plan mode, don't approve and fix later.
+
+## Step 13: a REST API with bearer tokens
+
+**Goal:** the first door for non-browser clients, with the lock tests written in the
+same prompt as the door.
+
+<!-- prompt: step13 -->
+```text
+Add the REST adapter from tech-docs/architecture.md: /api/todos for non-browser clients (a CLI comes next), covering every use case of the todo service.
+
+- Write the 401 tests together with the endpoints: one per endpoint without a token and one with an invalid token.
+- Integration tests call the route handlers on a temp database: one flow with a real bearer token that adds a todo, lists it, marks it done, filters, and deletes it; another user's todo id gives 404; invalid input gives 400 with the error code.
+- Write tech-docs/rest-api.md: one line per endpoint (method, path, contract schemas, status codes) and how to get a bearer token with curl.
+
+Done when the QA script is green. Then commit directly to main and push.
+```
+
+Rehearsal: 3.1 min, 21 turns, $0.93. 19 tests: two 401s per endpoint, the flow, 404 for
+another user's id, five kinds of bad input.
+
+```bash
+cat tech-docs/rest-api.md
+cat app/api/todos/route.ts                   # thin: parse, user, service, status code
+```
+
+- **The lock tests are in the prompt, not in a follow-up.** One 401 per endpoint is
+  cheap to write and expensive to forget. Count them in the diff before you look at
+  anything else.
+- The prompt is four lines because the architecture says how adapters work: parse with
+  the contract, `getUserId`, call the service, map errors. Check the route handlers are
+  thin.
+- A test that can't fail proves nothing. If the summary doesn't say the agent broke its
+  own auth once to see the tests go red, ask for it.
+- Decisions in the summary: the user is resolved *before* the input is parsed (a bad
+  request without a token is a 401, not a 400), and a malformed id is a 404 like
+  another user's id. Both follow from the architecture without being in the prompt.
+- Rehearsal finding for "staying in control": auto mode's safety check refused the
+  agent's own cleanup, `rm -rf "$(cat /tmp/…)"`, because the target couldn't be
+  resolved. The agent rewrote it with literal paths. Auto mode isn't "no checks".
+
+If it breaks: 401 with a token you just got → the bearer plugin may want the signed
+token from `set-auth-token`, not the raw session token; `tech-docs/rest-api.md` says
+which.
+
+## Step 14: raw protocol first
+
+**Goal:** use the door with `curl` before any client exists. A protocol you've seen raw
+is a protocol you can debug.
+
+```bash
+npm run db:reset && npm run db:seed && npm run dev      # terminal 1
+```
+
+Terminal 2 (field names as in the rehearsal; `tech-docs/rest-api.md` has yours):
+
+```bash
+curl -si http://localhost:3000/api/todos | head -1                     # 401
+TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/sign-in/email \
+  -H 'content-type: application/json' \
+  -d '{"email":"demo@todo-cat.dev","password":"cat-person-2026"}' | jq -r .token)
+curl -s -H "authorization: Bearer $TOKEN" 'http://localhost:3000/api/todos?status=open' | jq '.[0]'
+ID=$(curl -s -X POST -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"title":"added from curl"}' http://localhost:3000/api/todos | jq -r .id)
+curl -s -X PATCH -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"done":true}' http://localhost:3000/api/todos/$ID | jq -c .
+curl -s -X POST -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"title":""}' http://localhost:3000/api/todos | jq -c .           # 400 validation-failed
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -H "authorization: Bearer $TOKEN" \
+  http://localhost:3000/api/todos/$ID                                  # 204
+```
+
+- Sign-in returns a session token, and the bearer plugin accepts it in the
+  `Authorization` header. Same session, different transport than the cookie.
+- The error body is the contract's: `{ error: { code, message } }`. Stable codes are
+  what clients (and agents) branch on.
+- Everything the CLI does in the next step is one of these requests.
+
+If it breaks: `jq: command not found` → `sudo apt install jq` (or drop the `| jq` parts).
