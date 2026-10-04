@@ -49,6 +49,10 @@ API list prices from `claude -p`, less with a subscription.
 | 27b | fix the review findings | 11.6 min | 64 | $3.43 |
 | 28a | PR for the card | 1.7 min | 7 | $0.39 |
 | 28b | rebase the polish branch | 2.2 min | 11 | $0.38 |
+| 29a | side quest: Sindi over A2A (parallel) | 13.0 min | 99 | $4.20 |
+| 29b | side quest: OpenTelemetry (parallel) | 11.9 min | 74 | $2.88 |
+| 30 | CLI as stdio MCP server (parallel) | 11.1 min | 56 | $3.83 |
+| 32 | the agent as a user, MCP only | ~20 s | 6 | $0.05 |
 
 ## Before the workshop
 
@@ -1389,3 +1393,204 @@ what the cleanup block is for.
 
 If it breaks: the rebase goes in circles → `git rebase --abort`, merge `origin/main`
 into the branch instead; the history is less pretty, the result is the same.
+
+---
+
+# Day 2 afternoon: agents as users, boundaries, and side quests
+
+Catch-up point: `git reset --hard step28`.
+
+## Step 29: two side quests, started in the background
+
+**Goal:** presenter only. Two more agents, each in its own worktree, run while the main
+thread continues with MCP. Build-alongside attendees skip this and keep their time for
+step 33. The quests land in step 36.
+
+**Slide:** Sindi, the dog next door. The two ladies know each other through the fence.
+
+```bash
+claude --worktree sindi
+```
+
+```bash
+claude --worktree otel
+```
+
+Terminal one, Sindi over A2A:
+
+<!-- prompt: step29a -->
+```text
+This is a fresh worktree: run npm install and npm run db:migrate first. Other agents work in sibling worktrees and the main checkout at the same time: Sindi runs on port 4111, and if you start the web app, use PORT=3103.
+
+Sindi is the dog next door. She does errands that need a dog (fetch the ball, bark at the mailman, guard the porch). Build her as a separate, minimal Mastra app in sindi/: its own package, not a workspace of the web app, scaffolded with create-mastra non-interactively, @mastra/core pinned to 1.74.0 like the web app. Exactly one agent, `sindi`, on OpenRouter (the same OPENROUTER_API_KEY and OPENROUTER_MODEL as Lissie), served by `mastra dev` on port 4111. Mastra publishes her agent card at /api/.well-known/sindi/agent-card.json and her A2A endpoint at /api/a2a/sindi.
+
+Lissie gets Sindi as a subagent through A2AAgent from @mastra/core/a2a (SINDI_URL in .env, default http://localhost:4111). Lissie's persona gets exactly one exception to "only your to-do list": errands for Sindi, which she delegates with some feline disdain. If Sindi is unreachable, Lissie says so in character. Sindi's app owns its own observability config; in the web app, change nothing beyond registering the subagent and the persona exception, because another agent is adding tracing to Lissie's Mastra setup right now.
+
+Tests: Lissie's subagent wiring against a stubbed A2A server (no model calls), and the shape of Sindi's agent card. The QA script and CI never start Sindi or call a model. Write tech-docs/a2a.md: how to start Sindi and how to call her with curl.
+
+Done when the QA script is green. Commit on this worktree's branch and push it. No pull request yet.
+```
+
+Terminal two, OpenTelemetry into the Aspire dashboard:
+
+<!-- prompt: step29b -->
+```text
+This is a fresh worktree: run npm install and npm run db:migrate first. Other agents work in sibling worktrees and the main checkout at the same time: if you start the web app, use PORT=3104.
+
+Send Lissie's traces to the Aspire dashboard: @mastra/otel-exporter on Lissie's Mastra setup, with a custom OTLP endpoint over HTTP/protobuf (OTEL_EXPORTER_OTLP_ENDPOINT in .env, default http://localhost:4318) and service name todo-cat. Tracing is off when the variable is empty, so tests and CI export nothing. Use the mastra skill for the current observability API, and pin any new @mastra package to the version that matches @mastra/core 1.74.0. Add npm scripts that start and stop the dashboard in Docker (mcr.microsoft.com/dotnet/aspire-dashboard:13.5.2, UI on 18888, OTLP gRPC on 4317 and HTTP on 4318, anonymous access). Don't touch Lissie's agent definition, tools, or persona; another agent is wiring a subagent into her right now.
+
+Verify it yourself: start the dashboard, run one chat turn against the real model, and check that the trace with the agent run and its model and tool spans arrived. Write tech-docs/observability.md.
+
+Done when the QA script is green. Commit on this worktree's branch and push it. No pull request yet.
+```
+
+Rehearsal, both in parallel with step 30: Sindi 13.0 min, 99 turns, $4.20; tracing 11.9
+min, 74 turns, $2.88. Findings to read out in step 36:
+
+- Sindi: "Mastra passes Lissie's conversation to Sindi along with each errand, so the
+  user's todos go with it." The agent flagged it and left it, because the other quest
+  owned Lissie's Mastra options. A boundary to fix when the quests land.
+- Tracing: found an `aspire-dashboard` container already running on the ports (from
+  another talk), verified against it, and gave its own scripts a different container
+  name so `dashboard:stop` can't stop somebody else's container. Also: the exporter
+  needs `serverExternalPackages` in `next.config.ts`, or a production build silently
+  exports nothing.
+
+- Each quest names its port, its files, and what it must not touch. Both touch Lissie's
+  Mastra setup a little, so step 36 has a merge to do.
+- A2A is agent to agent: an agent card (who I am, what I can do) and a message
+  endpoint. Mastra publishes both for every agent; Lissie gets Sindi as a subagent.
+- Observability: OpenTelemetry is the standard, the Aspire dashboard is a free local
+  viewer for it. One trace across both apps only if it comes for free; two traces side
+  by side are fine.
+
+If it breaks: a quest stalls → it's a side quest. Skip it; step 36 works with whichever
+landed.
+
+## Step 30: the CLI as a local MCP server
+
+**Goal:** the third door, local edition. A stdio MCP server is a fancy CLI: same
+process, same commands, JSON-RPC on stdin/stdout instead of argv and exit codes.
+
+```bash
+git switch -c mcp-stdio
+```
+
+<!-- prompt: step30 -->
+```text
+Turn the CLI into a local MCP server: `todo-cat mcp --stdio` runs a Model Context Protocol server over stdio with one tool per CLI command, sharing the code with the commands, so a new command becomes a tool without a second implementation.
+
+- Use the official TypeScript SDK at exactly 2.3.0 (@modelcontextprotocol/server, and @modelcontextprotocol/client for tests). Research MCP with https://modelcontextprotocol.io/llms.txt and add it to "Researching docs" in AGENTS.md. Support the current spec revision; don't write extra code for older ones.
+- Tool annotations take the place of --yes (read-only, destructive, idempotent); tool errors with the API's error code take the place of exit codes and stderr. Without a login the server still starts, and every tool call returns an error that tells the user to run `todo-cat login`. Nothing but protocol goes to stdout.
+- Tool input schemas come from the contract.
+- Tests: an MCP client spawns the built CLI over stdio against the same test server the CLI test uses: list the tools with their annotations, add, list, done, and an API error becoming a tool error.
+- Update tech-docs/cli.md (including how to register the server in Claude Code) and the todo-cat-cli skill.
+
+Done when the QA script is green. Commit on the current branch, push, and open a pull request against main.
+```
+
+Rehearsal: 11.1 min, 56 turns, $3.83, in parallel with both side quests. The agent read
+the MCP `llms.txt`, the 2026-07-28 tools and stdio pages, and the SDK's own `llms.txt`.
+`login`, `logout`, and `mcp` stay CLI-only (a tool can't run a browser approval). A
+worktree gotcha surfaced: Vitest in the main checkout picked up the side quests' tests
+under `.claude/worktrees/`; the agent excluded the folder and said so.
+
+- **One command list feeds both interfaces.** A new command is a new tool. No drift.
+- **Annotations are hints for the client, not enforcement.** `destructiveHint` lets
+  Claude Code ask before `delete`; the service still checks ownership. A malicious
+  client ignores hints; it can't ignore the server.
+- **stdout belongs to the protocol.** One stray `console.log` breaks the server.
+- **llms.txt again**: one line in `AGENTS.md` and every later session uses it.
+- **Local resources**: stdio runs as you, with your login file. A remote server can't
+  read your disk; this one can.
+
+If it breaks: the server prints nothing when piped by hand → it stops at stdin EOF and
+drops requests in flight; keep stdin open (step 31's helper does).
+
+## Step 31: test the MCP server without an agent
+
+**Goal:** the protocol raw first, then a tester, then Claude Code. Dev server running,
+`npx todo-cat login` done.
+
+Raw JSON-RPC over stdin (spec revision 2026-07-28: no `initialize` handshake,
+`server/discover`, protocol version and client capabilities in `_meta` of every
+request):
+
+```bash
+mcp() {  # send JSON-RPC requests (one per argument) to the stdio server; keep stdin open until the answers are out
+  { printf '%s\n' "$@"; sleep 3; } | npx todo-cat mcp --stdio
+}
+META='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}'
+mcp '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{'"$META"'}}' | jq 'del(.result.instructions)'
+mcp '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{'"$META"'}}' | jq -c '.result.tools[] | {name, annotations}'
+mcp '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list","arguments":{"status":"open"},'"$META"'}}' | jq -r '.result.content[0].text' | jq -c '.[] | {title, dueDate}'
+mcp '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"show","arguments":{"id":"00000000-0000-4000-8000-000000000000"},'"$META"'}}' | jq -c .result
+```
+
+The MCPJam CLI, same server (note the `--args=` form, or MCPJam takes `--stdio` as its
+own option):
+
+```bash
+J="npx -y @mcpjam/cli@5.12.2 --no-telemetry"
+S="--transport stdio --command npx --args=todo-cat --args=mcp --args=--stdio"
+$J --format human server doctor $S
+$J tools list $S | jq -c '[.tools[].name]'
+$J tools call $S --tool-name add --tool-args '{"title":"added through MCPJam"}'
+$J tools call $S --tool-name show --tool-args '{"id":"00000000-0000-4000-8000-000000000000"}'
+```
+
+Only then Claude Code:
+
+```bash
+claude mcp add todo-cat -- npx todo-cat mcp --stdio
+claude mcp get todo-cat              # Connected
+```
+
+- `server/discover` answers `supportedVersions: ["2026-07-28"]`, capabilities, and the
+  server info in `_meta`. Stateless: every request stands alone.
+- `tools/list`: eight tools, the annotations doing the job `--yes` did on the CLI
+  (`delete` is the only `destructiveHint: true`).
+- A tool error is a *result* with `isError: true` and the API's error code, not a
+  protocol error. The model reads it and reacts.
+- `doctor` is the smoke test for any MCP server, in CI too.
+- Gotcha from the rehearsal: a validation error from the SDK (blank title) comes back
+  as the SDK's own text, without our error code. The agent documented it.
+
+If it breaks: `doctor` hangs → something writes to stdout besides the protocol; run the
+`mcp` helper and look for non-JSON lines.
+
+## Step 32: the agent as a user, MCP only
+
+**Goal:** step 18's request again, in a session with only the MCP server and no shell.
+CLI plus skill versus MCP, side by side.
+
+```bash
+npm run db:reset && npm run db:seed        # dev server stopped first, see troubleshooting
+claude --tools ""                          # no built-in tools; the MCP server from step 31 stays
+```
+
+<!-- prompt: step32 -->
+```text
+I have a busy weekend: put these on my list: buy cat food, clean the litter box, call grandma on Sunday, and fix the bike light before Monday. And tell me what's still open from last week.
+```
+
+Rehearsal, same seeded data, same Claude Code version:
+
+| | CLI + skill (step 18) | MCP only |
+| --- | ---: | ---: |
+| time | ~25 s | ~20 s |
+| turns | 6 | 6 |
+| tool calls | skill, 3 × Bash | 4 × `add`, 1 × `list` |
+| cost | $0.20 | $0.05 |
+
+- Both got it right, including "this weekend" on a Sunday and "last week" by creation
+  date. The MCP run had no skill: the tool descriptions and schemas carried enough.
+- **MCP is cheaper here** because there's no skill to load and no `--help` to read, and
+  twelve todos fit in a tool result. With hundreds of rows to aggregate, CLI plus `jq`
+  wins: the shell filters before anything reaches the context, while MCP pushes every
+  row through the model. The C# workshop measured the opposite result on a bigger data set.
+- MCP shines where there is no shell (claude.ai, mobile, other hosts) and for remote,
+  authenticated access: the next step.
+
+If it breaks: the tools don't show up → `claude mcp get todo-cat`; the server needs the
+CLI login from step 15.
