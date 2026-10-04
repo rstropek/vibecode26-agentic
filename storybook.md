@@ -11,8 +11,8 @@ Per step: goal, the script or prompt (copyable), a demo block, a few bullets to
 discuss, and one line for "if it breaks". Start every prompt in a **fresh session** in
 the repo root unless the step says otherwise.
 
-Rehearsed headless with `claude -p` (Opus 5.5, effort high, auto mode), one fresh
-session per prompt. The finished app after every step is tagged in
+Rehearsed headless with `claude -p` (Claude Code 2.1.289, Opus 5.5, effort high, auto
+mode) on 4 October 2026, one fresh session per prompt. The finished app after every step is tagged in
 [rstropek/vibecode26-agentic-rehearsal](https://github.com/rstropek/vibecode26-agentic-rehearsal)
 (`step04`, `step06`, …). Rehearsal scripts, prompts, and logs are in
 [`rehearsal/`](rehearsal/README.md).
