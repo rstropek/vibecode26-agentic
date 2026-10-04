@@ -31,6 +31,7 @@ API list prices from `claude -p`, less with a subscription.
 | 8 | test harness | 3.1 min | 22 | $0.79 |
 | 9 | QA script and CI | 4.3 min | 27 | $0.88 |
 | 10 | Drizzle, grounding | 5.9 min | 50 | $1.87 |
+| 11 | authentication | 9.1 min | 65 | $3.06 |
 
 ## Before the workshop
 
@@ -460,3 +461,70 @@ gh run watch                                            # first change through t
   sandbox step).
 
 If it breaks: `DATABASE_URL is not set` → `.env` is missing; `cp .env.example .env`.
+
+---
+
+# Day 1 afternoon: business logic, auth, and a CLI to drive it
+
+Catch-up point: `git reset --hard step10` (see [Before the workshop](#before-the-workshop)).
+
+## Step 11: authentication
+
+**Goal:** sign-up, sign-in, sign-out with Better Auth, and the auth pieces the whole
+afternoon builds on, named in one prompt.
+
+<!-- prompt: step11 -->
+```text
+Add authentication with Better Auth, email and password only. Use better-auth and @better-auth/drizzle-adapter at exactly 1.7.7.
+
+- Drizzle adapter on lib/db.ts. Generate the auth schema with Better Auth's CLI and apply it through our migration flow (secret and URL are already in .env).
+- Enable now the plugins this afternoon needs: bearer (the REST API and the CLI will send `Authorization: Bearer <token>`) and device authorization (the CLI will log in like `gh auth login`). Their pages and clients come later.
+- One server-side helper that maps a request to the signed-in user's id (session cookie or bearer token), or null. Every adapter we add later (REST, agent tools, MCP) uses it; nothing else reads sessions.
+- /signup and /login pages with Tailwind. Shared form styling lives in components/ui/, no repeated class strings. / requires a session, checked server-side, and shows the user's name and a sign-out button.
+- Tests: Vitest integration tests with Better Auth's test-utils plugin on a temp database (sign-up works, the right password signs in, a wrong one is rejected, the helper returns the user id for a cookie and for a bearer token and null without either), plus one Playwright e2e of the real sign-up, sign-out, and sign-in flow.
+- Better Auth is newer than your training data. Start at https://better-auth.com/llms.txt and follow its Next.js, Drizzle adapter, email and password, bearer, device authorization, and test-utils pages.
+- Write tech-docs/auth.md.
+
+Done when the QA script is green. Then commit directly to main and push.
+```
+
+Rehearsal: 9.1 min, 65 turns, $3.06.
+
+Demo:
+
+```bash
+npm run db:reset && npm run dev
+```
+
+Sign up at <http://localhost:3000/signup>, sign out, delete the cookies, reload `/` →
+redirect to `/login`. Then:
+
+```bash
+cat tech-docs/auth.md
+git show --stat HEAD
+```
+
+- **Name what the afternoon needs, now.** Bearer and device authorization have no UI
+  yet, but enabling them in the auth step means one schema generation, and the request
+  → user id helper is the one seam every adapter (REST, CLI, agent tools, MCP) goes
+  through.
+- **The session check runs server-side.** A client check is UX; the server check is the
+  gate. Look for it in the diff.
+- The auth schema is **generated**, not hand-written, and still flows through our one
+  migration path.
+- `components/ui/` now beats a refactor later: shared components, no copy-pasted
+  class recipes.
+- The test-utils plugin runs real auth flows in Vitest without HTTP or a browser. Fast
+  tests cover the logic, one Playwright test covers the wiring.
+- Exact versions in the prompt: Better Auth is one of the fragile dependencies, and
+  1.7 moved things around (MCP auth, Day 2).
+- Rehearsal findings worth reading out from the summary and `tech-docs/auth.md`:
+  - the Better Auth CLI can't load anything that imports `server-only`, so it runs on
+    its own config file and the options live in one shared module,
+  - its Drizzle generator emits relations v1, which Drizzle v1 no longer has, so the
+    agent switched to the relations-v2 adapter,
+  - `frontend-design` fired by itself for the login pages (fonts, a color scheme, dark
+    mode). Skills trigger on the task, not on a slash command.
+
+If it breaks: `BETTER_AUTH_SECRET` missing in CI → the workflow's dummy secrets come
+from `.env.example`; check the agent added nothing new without an example entry.
