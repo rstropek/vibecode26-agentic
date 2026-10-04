@@ -29,6 +29,7 @@ API list prices from `claude -p`, less with a subscription.
 | 6 | `AGENTS.md` and tech docs | 0.8 min | 7 | $0.26 |
 | 7 | script: skills | ~30 s | – | – |
 | 8 | test harness | 3.1 min | 22 | $0.79 |
+| 9 | QA script and CI | 4.3 min | 27 | $0.88 |
 
 ## Before the workshop
 
@@ -359,3 +360,50 @@ git show --stat HEAD
   the agent ran e2e next to a running `npm run dev` and found out.
 
 If it breaks: Playwright browser missing → `npx playwright install chromium`.
+
+## Step 9: the QA script and CI, one prompt
+
+**Goal:** one command that tells an agent (and you, and CI) whether the work is done.
+
+<!-- prompt: step09 -->
+```text
+Add a QA script and CI that give agents (and humans) fast, deterministic feedback.
+
+- scripts/qa.sh runs Biome, typecheck (all workspaces), production build, Vitest, and Playwright. One section per tool with PASS/FAIL; output of passing sections goes only to a log file, output of failing sections is printed; a summary at the end; non-zero exit code on failure. Write the output for agents: short, plain, no colors. Also available as `npm run qa`.
+- Playwright must never collide with `npm run dev` or with another checkout of this repo running at the same time: its port, its Next.js dist dir, and its database file are overridable via environment variables. The database arrives in a later step; make DATABASE_URL a temp file in the e2e server's env now.
+- AGENTS.md rule: run the QA script before you call a task done; fix the code instead of suppressing findings.
+- Prove that it works: temporarily plant two typical mistakes (a lint error and a type error), run the script, check that both are caught with file and line, then revert them.
+- A GitHub Actions workflow runs the same script on every push and pull request: Node 24, npm ci, cached Playwright browsers, generated dummy secrets in .env (never real ones). No deployment.
+- Document the QA script and CI in tech-docs/testing.md.
+
+Commit directly to main and push. Done when the QA script is green locally and the CI run of your push is green (watch it with gh).
+```
+
+Rehearsal: 4.3 min, 27 turns, $0.88. QA script ~10 s locally, CI run ~50 s.
+
+Demo:
+
+```bash
+npm run qa                                   # all PASS, summary at the end
+echo 'export const x: number = "oops";' > app/oops.ts
+npm run qa; echo "exit $?"                   # typecheck FAIL with file:line, exit 1
+rm app/oops.ts
+gh run list --limit 3
+gh run view --web
+```
+
+- **Deterministic tools → feedback → agent fixes → repeat.** That loop is what makes
+  agent output reliable. Agents ignore warnings; they don't ignore a red section.
+- Output for agents: one section per tool, failures only, summary last. Live follow-up
+  if it's too noisy: "make the QA output more concise".
+- "Fix, don't suppress": without that line, agents like to "fix" findings by disabling
+  the rule.
+- The agent tested its own test: two planted mistakes, both caught, reverted.
+- CI calls the **same** script. No second definition of "green". No CD on purpose.
+- **Hooks** would make this deterministic (a `Stop` hook that runs the QA script). We
+  don't build one; the rule in `AGENTS.md` plus CI is enough for today.
+- From here on, every prompt ends with "Done when the QA script is green. Then commit
+  and push."
+
+If it breaks: CI red but local green → `gh run view --log-failed`, paste it into the
+session.
