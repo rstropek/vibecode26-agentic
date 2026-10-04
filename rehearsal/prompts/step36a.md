@@ -1,0 +1,1 @@
+main has moved: both MCP servers were merged. Rebase this branch onto origin/main and resolve the conflicts, keeping both sides' intent. Done when the QA script is green. Then force-push this branch with lease and open a pull request against main.

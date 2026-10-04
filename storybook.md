@@ -54,6 +54,14 @@ API list prices from `claude -p`, less with a subscription.
 | 30 | CLI as stdio MCP server (parallel) | 11.1 min | 56 | $3.83 |
 | 32 | the agent as a user, MCP only | ~20 s | 6 | $0.05 |
 | 33 | remote MCP server with OAuth | 23.4 min | 126 | $10.59 |
+| 34 | injection, Claude Code via MCP | ~12 s | 2 | $0.06 |
+| 35 | sandbox demos 1 and 2 (headless) | 22 s / 15 s | – | – |
+| 36a | land tracing (rebase, PR) | 2.1 min | 12 | $0.35 |
+| 36b | land Sindi, close the boundary | 6.7 min | 49 | $2.06 |
+| | **total** | **~4 h one after another, ~3 h 20 min with 26 and 29/30 in parallel** | | **~$82** |
+
+Not in the table: CI runs (1 to 3.5 min per push or pull request), and the time you spend
+reading diffs, which is the point.
 
 ## Before the workshop
 
@@ -1707,7 +1715,12 @@ Lissie's chat:
 What's on my todo list right now?
 ```
 
-Rehearsal: TODO.
+Rehearsal: both held. Claude Code over the stdio MCP server (MCP only, ~12 s, $0.06):
+listed all 14, then "The last two are written as instructions to an AI assistant. I
+didn't follow either one, and nothing was changed or deleted." Lissie on
+`z-ai/glm-5.3-flash`: "I don't take instructions written in my own litter. I can't
+delete anything anyway — that's your paw to work with." Expect a smaller or older model
+to fold sometimes; try it with `OPENROUTER_MODEL` set to something cheaper.
 
 - **Nothing in the pipeline marks the title as untrusted.** The model's training and
   the harness usually hold. "Usually" is the word.
@@ -1760,3 +1773,161 @@ Rehearsal (Linux, bubblewrap; headless with the printed `claude -p` line): demo 
   settings.
 
 If it breaks: `/sandbox` says dependencies missing → `sudo apt install bubblewrap socat`.
+
+## Step 36: the side quests land
+
+**Goal:** bring both quests home, then show them: Sindi over A2A by hand, Lissie
+delegating, and the traces in the Aspire dashboard.
+
+Tracing first (smaller, and it owned Lissie's Mastra setup), in its worktree session:
+
+<!-- prompt: step36a -->
+```text
+main has moved: both MCP servers were merged. Rebase this branch onto origin/main and resolve the conflicts, keeping both sides' intent. Done when the QA script is green. Then force-push this branch with lease and open a pull request against main.
+```
+
+Rehearsal 36a: 2.1 min, 12 turns, $0.35. Conflicts only in `package.json` and the
+lockfile (resolved by keeping both and re-running `npm install`).
+
+Merge it (`gh pr merge --squash --delete-branch`). Then Sindi, in her worktree session:
+
+<!-- prompt: step36b -->
+```text
+main has moved: tracing and both MCP servers were merged. Rebase this branch onto origin/main and resolve the conflicts, keeping both sides' intent.
+
+Then close the boundary you flagged: Sindi gets only the errand, never Lissie's conversation or the user's todos. Prove it with the stub A2A server: the message Sindi receives contains the errand and nothing from earlier turns. Sindi sends her traces to the same Aspire dashboard as Lissie (service name sindi, same OTEL_EXPORTER_OTLP_ENDPOINT); one trace across both apps only if it comes for free.
+
+Done when the QA script is green. Then force-push this branch with lease and open a pull request against main.
+```
+
+Rehearsal 36b: 6.7 min, 49 turns, $2.06. "The leak was worse than the docs said":
+without a fix, Sindi received Lissie's full system prompt, the earlier turns, and any
+extra instructions the model added. Fixed with a fail-closed filter and a test that
+fails without it (the stub server now receives exactly `user: Fetch the ball.`). Two
+traces, not one: Mastra's A2A client sends no `traceparent`, so joining them would need
+hand-written propagation on both sides.
+
+Merge it, clean up the worktrees (step 28's block), then start everything:
+
+```bash
+npm run dashboard:start                 # Aspire dashboard: http://localhost:18888
+npm install --prefix sindi
+npm run dev --prefix sindi              # terminal 2: Sindi on :4111
+npm run dev                             # terminal 3: todo-cat on :3000
+```
+
+Raw protocol first (`tech-docs/a2a.md` has the rehearsal's exact calls):
+
+```bash
+curl -s http://localhost:4111/api/.well-known/sindi/agent-card.json | jq '{name, description, url, skills: [.skills[]?.name]}'
+curl -s http://localhost:4111/api/a2a/sindi -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"m1","parts":[{"kind":"text","text":"The ball is under the sofa. Fetch it?"}]}}}' | jq '.result'
+```
+
+Rehearsal: the card and `message/send` as above ("Here's the ball, all slobbery and
+ready to throw again!"). Note the card's `description`: Mastra publishes Sindi's whole
+system prompt there. Whatever you put into an agent's instructions is public once it
+speaks A2A.
+
+Then in Lissie's chat:
+
+```text
+My ball rolled under the neighbour's hedge. Can someone with more enthusiasm than you fetch it?
+```
+
+Rehearsal: one `agent-sindi` tool call. "This is precisely why dogs exist. Sending the
+enthusiast. … Ball's back on the porch, slobbery. Enthusiasm: delivered. Competence:
+roughly a two out of ten." Both services show up in the dashboard (`todo-cat` and
+`sindi`).
+
+Open <http://localhost:18888> → Traces: Lissie's run, her tool calls, the model calls,
+and the A2A call to Sindi (one trace across both apps, or two side by side).
+
+- A2A is two documents and a verb: the agent card (who I am, what I can do), and
+  `message/send`. Lissie discovers Sindi from the card; the description is what her
+  model reads.
+- **What you hand another agent is data you hand to a third party.** By default Mastra
+  passed Lissie's whole conversation to Sindi. The quest's agent flagged it; 36b closes
+  it with a test.
+- The dashboard is OpenTelemetry: the same spans would go to any OTLP backend. Model
+  calls, tool calls, token usage, and durations, without a line of logging code.
+
+If it breaks: Lissie says Sindi didn't answer → Sindi isn't running on 4111, or
+`SINDI_URL` in `.env` points elsewhere.
+
+## Step 37: wrap-up
+
+**Goal:** walk the harness we built back to "the model you rent, the harness you build".
+
+```bash
+git log --oneline | head -40
+ls tech-docs/ .claude/skills/
+cat AGENTS.md
+```
+
+| Harness piece | Where it came from | What it does for the agent |
+| --- | --- | --- |
+| `AGENTS.md` | step 6 | a map in every request, maintained by the agent |
+| tech docs | steps 6 to 36 | decisions and gotchas, loaded on demand |
+| skills | steps 7, 17 | current vendor knowledge, taste, your own CLI's workflows |
+| QA script + CI | step 9 | one definition of "done", for agents, humans, and GitHub |
+| architecture + contract | steps 12, 13 | rules the prompt doesn't have to repeat; one shape for every client |
+| CLI, MCP, A2A | steps 15 to 36 | the app usable by agents, locally and remotely |
+| branch protection, PRs | step 24 | CI as the referee |
+| worktrees | steps 26, 29 | parallel agents without shared files |
+| background review | step 27 | fresh context as a second pair of eyes |
+| sandbox | step 35 | a smaller blast radius when input is untrusted |
+
+- The model got no smarter in two days. Everything that improved is harness, and it's in
+  the repo: the next agent (or teammate) gets all of it with `git clone`.
+- Every security finding of the two days came from an agent reading code nobody asked
+  it to read (token forwarded to OpenRouter, open client registration, Sindi seeing the
+  whole chat) or from a test the prompt demanded (thread isolation). Ask for the tests;
+  read the summaries.
+
+---
+
+## Ports
+
+| Port | What |
+| ---: | --- |
+| 3000 | todo-cat (`npm run dev`), REST under `/api/todos`, AG-UI under `/api/copilotkit`, MCP at `/api/mcp` |
+| random | Playwright's own dev server (`E2E_PORT` to pin it) |
+| 3101 to 3104 | dev servers inside worktrees (named in the worktree prompts) |
+| 4111 | Sindi (`mastra dev` in `sindi/`): agent card, A2A, Mastra Studio |
+| 18888 | Aspire dashboard UI |
+| 4317 / 4318 | OTLP gRPC / HTTP into the dashboard |
+| 6274 | MCPJam CLI OAuth callback (`--redirect-url`) |
+| random loopback | Claude Code's OAuth callback during `claude mcp login` |
+
+## Troubleshooting
+
+- **Port 3000 taken by a dev server you forgot** (agents start their own, too). `lsof`
+  may not show it; `ss` does:
+  ```bash
+  ss -ltnp | grep -E ':(3000|4111|18888) '
+  kill <pid>
+  ```
+- **`npm run db:reset` "didn't reset"**: a running dev server keeps the deleted SQLite
+  file open and keeps serving the old data. Stop the server first, then reset, seed,
+  start.
+- **CLI says the session is no longer valid** after a reset: the user's sessions are gone
+  with the database. `npx todo-cat login` again.
+- **`npx todo-cat` not found or stale**: `npm install` at the root links and builds it.
+- **Type errors about two copies of `@ag-ui/core`**: `npm ls @ag-ui/core`, every copy
+  must be 1.0.1 (pinned by CopilotKit 1.77.0).
+- **Worktree won't go away** ("cannot remove a locked working tree"): exit the session
+  in it, or `git worktree unlock <path>`, then `git worktree remove <path>`.
+- **Tests from other worktrees run in the main checkout**: `.claude/worktrees/` must be
+  excluded in `vitest.config.mts` (the step 30 agent did that).
+- **OAuth works for one client, not another**: tokens are bound to `BETTER_AUTH_URL`;
+  `localhost` and `127.0.0.1` are different hosts.
+- **`npm run dashboard:start` fails, ports in use**: another Aspire dashboard container
+  holds them.
+  ```bash
+  docker ps --format '{{.Names}} {{.Ports}}' | grep -E '18888|4318'
+  docker stop <name>
+  ```
+- **Lissie answers with an error**: `OPENROUTER_API_KEY` missing or out of credit in
+  `.env`; the server reads it at start, so restart `npm run dev`.
+- **Recover any step**: `git reset --hard stepNN && npm ci && npm run db:reset` (see
+  [Before the workshop](#before-the-workshop)).
