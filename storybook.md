@@ -38,6 +38,8 @@ API list prices from `claude -p`, less with a subscription.
 | 17 | skill for the CLI | 2.3 min | 4 (+2 subagents) | $1.08 |
 | 18 | the agent as a user | 39 s | 6 | $0.19 |
 | 20 | Day 1 close: audit | 4.4 min | 27 | $1.68 |
+| 21 | Lissie | 20.5 min | 131 | $9.46 |
+| 21b | chat contrast fix | 4.9 min | 33 | $1.25 |
 
 ## Before the workshop
 
@@ -887,3 +889,103 @@ git log --oneline | head -20           # the day in commits
   the file.
 - Read the audit as a claim to check: did it cut a line that saved somebody a wrong
   turn?
+
+---
+
+# Day 2 morning: Lissie moves in, and the app gets a face
+
+Catch-up point: `git reset --hard step20`, then put your OpenRouter key into `.env`.
+
+## Step 21: Lissie
+
+**Goal:** the heart of the app. A Mastra agent with a persona, per-user memory in
+SQLite, served to CopilotKit over AG-UI.
+
+**Slide:** `her_majesty.jpeg`. Introduce the user before any code.
+
+<!-- prompt: step21 -->
+```text
+Lissie moves in: a chat with her on /. Use your mastra and copilotkit skills; don't wire this from memory. Exact versions: @mastra/core 1.74.0, @mastra/memory 1.35.0, @mastra/libsql 1.25.0, @ag-ui/mastra 1.1.6, @ag-ui/client and @ag-ui/core 1.0.1, @copilotkit/react-core and @copilotkit/runtime 1.77.0.
+
+- One Mastra agent `lissie` with a system prompt you write: Lissie is the user's cat and keeps their to-do list, with the attitude you'd expect from a cat (dry, superior, secretly caring). She declines everything that isn't about the list, in character. Her tools come in a later session.
+- Model via OpenRouter: OPENROUTER_MODEL from .env, default z-ai/glm-5.3-flash. OPENROUTER_API_KEY stays server-only.
+- Mastra memory in our SQLite file, scoped by the Better Auth user id from the server-side session: one thread per user, and conversations survive a restart.
+- Serve her to CopilotKit over AG-UI. The chat lives on / (keep the header with sign-out, reuse components/ui/).
+- Memory scoping is authorization, and so is the CopilotKit runtime: its endpoint rejects unauthenticated requests, and one user can't read, reconnect to, or stop another user's thread. Check every route the runtime serves, not only the one the browser calls, and write a test for each rule.
+- A chat e2e that calls the model is fine, but it stays out of the QA script and CI (its own npm script).
+- Write tech-docs/agent.md.
+
+Done when the QA script is green. Then commit directly to main and push.
+```
+
+Rehearsal: 20.5 min, 131 turns, $9.46. The longest prompt of the two days.
+
+The rehearsal's chat came out barely readable in dark mode (Lissie's replies dark grey
+on dark purple) with every test green. Tests don't see CSS. The follow-up, in the same
+session:
+
+<!-- prompt: step21b -->
+```text
+In dark mode, Lissie's replies are barely readable: dark grey text on the dark purple chat. Fix the contrast of the whole chat (messages, input, buttons) in dark and light mode, and check it yourself in screenshots of the running app before you commit.
+
+Done when the QA script is green. Then commit directly to main and push.
+```
+
+Rehearsal 21b: 4.9 min, 33 turns, $1.25. Cause: CopilotKit switches to dark colors only
+on a `.dark` class, and the app follows the OS setting. The agent compared before and
+after screenshots in both modes and noted in `tech-docs/agent.md` that its overrides
+target CopilotKit's test ids, so an upgrade can silently undo them.
+
+Demo:
+
+```bash
+npm run dev
+```
+
+Sign in as the demo user. Then, in the chat:
+
+```text
+Good morning, Lissie. What's the capital of France?
+```
+
+```text
+Fine. What's on my list?
+```
+
+Restart `npm run dev`, reload: the conversation is still there. Sign up a second user in
+a private window: empty chat.
+
+**Prove it**: a stranger with a valid session of their own attacks the demo user's chat
+on every route the runtime serves ([`materials/check-chat-isolation.sh`](materials/check-chat-isolation.sh),
+one model call). Then switch the guard off and watch it leak:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rstropek/vibecode26-agentic/main/materials/check-chat-isolation.sh -o /tmp/check-chat-isolation.sh && chmod +x /tmp/check-chat-isolation.sh
+/tmp/check-chat-isolation.sh                  # control OK, every attack 404, ISOLATED
+# now comment out the agent's route guard (lib/copilot-runtime.ts in the rehearsal: authorizeRoute in onBeforeHandler)
+/tmp/check-chat-isolation.sh                  # LEAK: threads/<id>/messages and /events return the victim's chat
+git checkout lib/copilot-runtime.ts
+```
+
+- **"Don't wire this from memory."** Mastra, AG-UI, and CopilotKit are a three-package
+  handshake that changes monthly. The vendors' skills carry today's wiring; exact
+  versions keep it reproducible.
+- **The persona is product, not config.** Read the system prompt aloud. Today it's a
+  string in a file; it decides how the product feels.
+- **Memory scoping is authorization.** The resource id comes from the server-side
+  session, never from the client.
+- **The runtime is an attack surface you didn't write.** CopilotKit serves 20 routes;
+  the browser calls three. In an earlier course nobody checked, and any signed-in user
+  could read everybody's chats. This time the prompt demands the tests, and the
+  rehearsal's agent answered with a deny-by-default allowlist (info, run, connect and
+  stop on your own thread only) and a 401 test for all 20 routes. Count them, then run
+  the attack script anyway: a test the agent wrote is a claim, a repro is evidence.
+- **The leak nobody asked about.** In the rehearsal, the agent found that the runtime
+  forwards `authorization` and `x-*` headers to the agent, and `@ag-ui/mastra` passes
+  them on to OpenRouter: a CLI user's session token would have gone to the model
+  provider. It noticed because the forwarded header knocked out the API key in a
+  production smoke test. Read that part of the summary aloud.
+- LLM tests are quarantined: non-deterministic, slow, and they cost money on every run.
+
+If it breaks: type errors about two `@ag-ui/core` copies → `npm ls @ag-ui/core`; every
+copy must be 1.0.1.
