@@ -989,3 +989,128 @@ git checkout lib/copilot-runtime.ts
 
 If it breaks: type errors about two `@ag-ui/core` copies → `npm ls @ag-ui/core`; every
 copy must be 1.0.1.
+
+## Step 22: raw protocol first, AG-UI
+
+**Goal:** read the event stream before CopilotKit hides it.
+
+Dev server running. Terminal 2:
+
+```bash
+B=http://localhost:3000
+TOKEN=$(curl -s -X POST $B/api/auth/sign-in/email -H 'content-type: application/json' \
+  -d '{"email":"demo@todo-cat.dev","password":"cat-person-2026"}' | jq -r .token)
+THREAD=lissie-$(curl -s $B/api/auth/get-session -H "authorization: Bearer $TOKEN" | jq -r .user.id)
+curl -s $B/api/copilotkit/info -H "authorization: Bearer $TOKEN" | jq -c '{version, agents: (.agents|keys)}'
+curl -sN $B/api/copilotkit/agent/lissie/run -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"threadId":"'$THREAD'","runId":"curl-1","messages":[{"id":"curl-m1","role":"user","content":"Lissie, what is on my list today?"}],"tools":[],"context":[],"state":{},"forwardedProps":{}}'
+```
+
+(The thread id scheme `lissie-<user id>` is the rehearsal's; `tech-docs/agent.md` has
+yours.)
+
+- One `data:` line per event: `RUN_STARTED`, `TEXT_MESSAGE_START`, a
+  `TEXT_MESSAGE_CONTENT` per token delta, `TEXT_MESSAGE_END`, `RUN_FINISHED`. That is
+  AG-UI: typed JSON events over server-sent events.
+- The same request with another user's thread id gives 404 (step 21).
+- Today she can't see the list ("nobody has connected my eyes to your list"). Next
+  step: tools, and `TOOL_CALL_*` events appear in this stream.
+- In the browser: the CopilotKit inspector (bubble at the bottom, dev only) shows the
+  same events.
+
+## Step 23: tool calling, on a branch
+
+**Goal:** Lissie acts instead of only talking. Tools as one more adapter on the todo
+service, and from now on: branch, pull request, CI, merge.
+
+```bash
+git switch -c lissie-tools
+```
+
+<!-- prompt: step23 -->
+```text
+Give Lissie tools for the signed-in user's todo list: listTodos, addTodo, setTodoDone, as one more adapter on the todo service (see tech-docs/architecture.md). Use your mastra skill for the current tools API.
+
+- The user id comes from the server-side session through Mastra's request context, never from the model or the client.
+- Persona: Lissie comments on every todo she adds and on every todo marked done, in character. Mark "feed the cat" as done and she has opinions.
+- Next to the chat, a read-only sidebar with the open and done todos that refreshes when Lissie changes something. Lissie is the browser's write path for now.
+- Render her tool calls in the chat so the user sees what she did: one readable line per call, not raw JSON. Tool calls survive the history replay after a restart.
+- Tests: the tool executors on a temp database, with per-user isolation; the LLM e2e (its own npm script, outside QA and CI) asks Lissie to add "buy milk" and finds it in the sidebar.
+
+Done when the QA script is green. Commit on the current branch, push, and open a pull request against main with a description a reviewer can use: what changed, how the user id reaches the tools, how to test it.
+```
+
+Rehearsal: TODO.
+
+Demo, in the chat:
+
+```text
+Busy day. Add: buy cat food, call the vet, feed the cat.
+```
+
+```text
+I fed the cat.
+```
+
+```text
+What's still open?
+```
+
+Then the stream again (step 22's `curl -N`, ask "add water the plants"): now with
+`TOOL_CALL_START`, `TOOL_CALL_ARGS`, `TOOL_CALL_END`, `TOOL_CALL_RESULT`.
+
+- **Tools are the contract between the model and your system.** The zod schema plus the
+  description is all the model knows about a tool. Read one description aloud.
+- **Identity injection**: the user id travels from the session into the tool executor.
+  The model never sees it and never chooses it. The model is untrusted input;
+  authorization lives in your code. Ask the agent how the browser can't smuggle in a
+  different id.
+- One more adapter, no new business logic: the tools call the same service as REST
+  and the CLI. Check the diff for a second copy of a query.
+- The persona is product: she comments on adds and on "done". That's prompt work, and it
+  sits in the system prompt next to the tools.
+
+If it breaks: she claims she added something but the sidebar didn't change → look at
+the stream for a `TOOL_CALL_RESULT`; no tool call means the model only talked.
+
+## Step 24: branch and pull request rhythm
+
+**Goal:** CI as the referee before anything lands on `main`.
+
+Make CI a required check on `main` (once; the job in the workflow is called `qa`):
+
+```bash
+gh api -X PUT 'repos/{owner}/{repo}/branches/main/protection' --input - <<'EOF'
+{"required_status_checks":{"strict":true,"contexts":["qa"]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null}
+EOF
+```
+
+Read the pull request the agent opened:
+
+```bash
+gh pr view --web
+gh pr checks --watch
+```
+
+Merge from inside the session, so the agent sees what you see:
+
+```text
+!gh pr merge --squash --delete-branch
+```
+
+```text
+!git switch main && git pull
+```
+
+- The agent writes the description (it knows what it changed); you read it as the
+  reviewer. Claude Code links the session to the PR: `claude --from-pr <number>`.
+- `!` commands land in the conversation. The next prompt starts from "branch merged, on
+  main", without you explaining it.
+- `enforce_admins: false` keeps direct pushes possible for you (and for the agent's
+  "commit directly to main" prompts earlier). Pull requests can't merge until `qa` is
+  green.
+- Push before you branch: unpushed commits on local `main` show up in the PR as if
+  they were part of the feature.
+
+If it breaks: merge blocked although green → the check name must match the job name
+(`gh pr checks` shows it).
