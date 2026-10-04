@@ -2,7 +2,7 @@
 .env
 *.env
 # the rehearsal app is its own repository (rstropek/vibecode26-agentic-rehearsal)
-/solution/
+/solution
 # raw rehearsal logs; the gzipped copies are committed
 /rehearsal/logs/*.jsonl
 /rehearsal/logs/*.log

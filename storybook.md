@@ -26,6 +26,7 @@ API list prices from `claude -p`, less with a subscription.
 | --- | --- | ---: | ---: | ---: |
 | 4 | script: scaffold | ~30 s | – | – |
 | 5 | script: onto GitHub | ~5 s | – | – |
+| 6 | `AGENTS.md` and tech docs | 0.8 min | 7 | $0.26 |
 
 ## Before the workshop
 
@@ -142,8 +143,8 @@ rm CLAUDE.md
 
 # npm workspaces root: shared zod contract and the CLI, declared now, filled later
 mkdir -p contract cli
-printf '{ "name": "@todo-cat/contract", "version": "0.1.0", "private": true }\n' > contract/package.json
-printf '{ "name": "todo-cat-cli", "version": "0.1.0", "private": true }\n' > cli/package.json
+printf '{\n  "name": "@todo-cat/contract",\n  "version": "0.1.0",\n  "private": true\n}\n' > contract/package.json
+printf '{\n  "name": "todo-cat-cli",\n  "version": "0.1.0",\n  "private": true\n}\n' > cli/package.json
 npm pkg set 'workspaces[0]=contract' 'workspaces[1]=cli'
 npm install --silent
 
@@ -164,6 +165,7 @@ sed -e "s|^OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-sk-or-
     -e "s|^BETTER_AUTH_SECRET=.*|BETTER_AUTH_SECRET=$(openssl rand -base64 32)|" .env.example > .env
 printf '!.env.example\n' >> .gitignore
 
+npm run lint --silent
 git add -A
 git commit -qm "Scaffold todo-cat (create-next-app, npm workspaces)"
 git log --oneline
@@ -226,6 +228,8 @@ Turn AGENTS.md into a short map for future agent sessions. Keep the nextjs-agent
 
 Done when `npm run lint` passes. Then commit directly to main and push.
 ```
+
+Rehearsal: 0.8 min, 7 turns, $0.26.
 
 Demo:
 
