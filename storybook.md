@@ -36,6 +36,8 @@ API list prices from `claude -p`, less with a subscription.
 | 13 | REST API | 3.1 min | 21 | $0.93 |
 | 15 | `todo-cat` CLI | 16.1 min | 80 | $5.08 |
 | 17 | skill for the CLI | 2.3 min | 4 (+2 subagents) | $1.08 |
+| 18 | the agent as a user | 39 s | 6 | $0.19 |
+| 20 | Day 1 close: audit | 4.4 min | 27 | $1.68 |
 
 ## Before the workshop
 
@@ -793,3 +795,95 @@ cat .claude/skills/todo-cat-cli/SKILL.md
 
 If it breaks: the subagent says "not logged in" → `npx todo-cat login` again; device
 codes expire after 30 minutes.
+
+## Step 18: the agent as a user
+
+**Goal:** the shift from "agent writes code" to "agent uses the app". Same agent, first
+developer, now user.
+
+Fresh session (`/clear` or a new `claude`), CLI logged in, seeded data:
+
+<!-- prompt: step18 -->
+```text
+I have a busy weekend: put these on my list: buy cat food, clean the litter box, call grandma on Sunday, and fix the bike light before Monday. And tell me what's still open from last week.
+```
+
+Rehearsal: 39 s, 6 turns, $0.19. The rehearsal ran on a Sunday: the agent took "this
+weekend" as today, set "before Monday" to today, offered to move both to next weekend,
+and spelled out "last week" as Mon 09-21 to Sun 09-27 by creation date.
+
+Demo: `npx todo-cat list` afterwards, or the web app.
+
+- No code, no repo knowledge needed: the skill fired on "my list", the agent checked
+  the login, read `--help`, and worked out dates relative to today.
+- The weekend dates are the agent's interpretation. Read how it resolved "Sunday" and
+  "before Monday", and whether it said so.
+- "From last week" is ambiguous (created? due?). The skill's date table decides; check
+  the answer names the range it used.
+- Permissions: `Bash(npx todo-cat:*)` in `.claude/settings.json` lets the agent work
+  without prompts. Mind the destructive commands; `--yes` is your second line.
+
+If it breaks: the agent starts reading source code → the skill didn't fire; say "use
+the todo-cat CLI".
+
+## Step 19: staying in control
+
+**Goal:** no new code. The habits that keep you the reviewer, woven through the
+afternoon. Use whichever moment fits; the pointers say where they came up in the
+rehearsal.
+
+- **Read the diff and the summary.** `git show --stat HEAD`, then the files that matter.
+  The summary is where the agent reports its decisions (step 10: Drizzle rc pin, step
+  12: "choices you may want to review", step 15: open-redirect check). Treat each one as
+  a review question.
+- **`Esc`** stops the agent mid-turn; your next message steers. **`Esc Esc`** or
+  **`/rewind`** jumps back to an earlier message, code included.
+- **The two-corrections rule**: if you corrected the same thing twice, `/clear` and
+  write a better first prompt. The context is full of failed attempts.
+- **Analysis prompts about the agent's own run** change no code and teach a lot:
+
+<!-- prompt: step19a -->
+```text
+Looking back at this session: what could I have given you up front to make this task easier? Docs, skills, a clearer requirement, access to source code? Be specific.
+```
+
+<!-- prompt: step19b -->
+```text
+Which lines of AGENTS.md and the tech docs did you actually rely on in this session, and which would you have found out anyway by opening the file they point to?
+```
+
+- **Auto mode isn't "no checks"**: in step 13 the safety check stopped the agent's own
+  `rm -rf "$(cat …)"`. Permission modes decide what asks; the classifier still blocks
+  what looks destructive.
+
+## Step 20: Day 1 close
+
+**Goal:** the memory file and tech docs are true at the end of the day, and CI is green.
+
+<!-- prompt: step20 -->
+```text
+Audit AGENTS.md and the tech docs against the repository as it is now. Check every claim (commands, file paths, gotchas) and fix what has gone stale. Then read them as if you were starting on this repo tomorrow: cut what an agent would find out by opening the file a line points to, and add what would have saved a wrong turn today. Keep the maintenance rules.
+
+Done when the QA script is green. Then commit directly to main and push.
+```
+
+Rehearsal: 4.4 min, 27 turns, $1.68 (fresh session). Found `architecture.md` drawing
+MCP and pages as built, two wrong lines in `AGENTS.md`, added first-time setup
+(`.env`, migrate, seed, Playwright browser), cut ~30 lines that repeated code comments.
+In a fresh session it has no "wrong turns today" to draw from. Run it in the session
+that did the afternoon's work if you want those.
+
+Demo:
+
+```bash
+git show --stat HEAD
+git diff HEAD~1 -- AGENTS.md
+gh run list --limit 1                  # last CI run of the day: green
+git log --oneline | head -20           # the day in commits
+```
+
+- **Memory drifts.** The maintenance rule keeps lines current that a change touches;
+  nothing re-checks the others. An explicit audit once in a while is part of owning
+  the file.
+- Read the audit as a claim to check: did it cut a line that saved somebody a wrong
+  turn?
