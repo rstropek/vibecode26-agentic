@@ -40,6 +40,7 @@ API list prices from `claude -p`, less with a subscription.
 | 20 | Day 1 close: audit | 4.4 min | 27 | $1.68 |
 | 21 | Lissie | 20.5 min | 131 | $9.46 |
 | 21b | chat contrast fix | 4.9 min | 33 | $1.25 |
+| 23 | tool calling + PR | 15.5 min | 109 | $5.82 |
 
 ## Before the workshop
 
@@ -1040,7 +1041,9 @@ Give Lissie tools for the signed-in user's todo list: listTodos, addTodo, setTod
 Done when the QA script is green. Commit on the current branch, push, and open a pull request against main with a description a reviewer can use: what changed, how the user id reaches the tools, how to test it.
 ```
 
-Rehearsal: TODO.
+Rehearsal: 15.5 min, 109 turns, $5.82, PR CI ~3 min. In the browser: "Busy day. Add …"
+gave three `✓ Added` lines, the sidebar refreshed, and "I fed the cat" got "Is it the
+good food, the one with the pâté, or the budget gravel?"
 
 Demo, in the chat:
 
@@ -1069,6 +1072,12 @@ Then the stream again (step 22's `curl -N`, ask "add water the plants"): now wit
   and the CLI. Check the diff for a second copy of a query.
 - The persona is product: she comments on adds and on "done". That's prompt work, and it
   sits in the system prompt next to the tools.
+- From the rehearsal's PR: the user id goes into Mastra's *reserved* request-context
+  keys, which override any resource or thread id a request names; a `userId` the model
+  invents is dropped by the schema (tested); the browser's AG-UI context lands under its
+  own key and can't set the user. Run `check-chat-isolation.sh` again: still isolated.
+- Today's date goes into the system prompt, so "due Friday" becomes a date. Server time
+  zone, not the user's: a review question.
 
 If it breaks: she claims she added something but the sidebar didn't change → look at
 the stream for a `TOOL_CALL_RESULT`; no tool call means the model only talked.
