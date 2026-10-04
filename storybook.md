@@ -528,3 +528,59 @@ git show --stat HEAD
 
 If it breaks: `BETTER_AUTH_SECRET` missing in CI → the workflow's dummy secrets come
 from `.env.example`; check the agent added nothing new without an example entry.
+
+## Step 12: architecture first
+
+**Goal:** planning before coding. You write the architecture, plan mode turns it into a
+plan, and the prompt only has to name the task.
+
+Copy the architecture article (written ahead of time, shipped with this storybook) into
+the repo and commit it on its own, so the human-written part has its own diff:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rstropek/vibecode26-agentic/main/materials/architecture.md -o tech-docs/architecture.md
+git add tech-docs/architecture.md && git commit -m "Add architecture" && git push
+```
+
+Walk through [`materials/architecture.md`](materials/architecture.md): one todo service
+with per-user queries, a shared `contract` workspace, thin adapters (REST, CLI, later
+agent tools and MCP), "not found" instead of "forbidden", and a "deliberately not done"
+list.
+
+Then `Shift+Tab` into **plan mode**, paste the prompt, read the plan, approve it.
+
+<!-- prompt: step12 -->
+```text
+Implement the todo core described in tech-docs/architecture.md: the todos table with its owner, the todo service, and the contract workspace with the zod schemas. No adapters yet; REST, CLI, and agent tools follow in later sessions.
+
+- Tests: the service against a temp database, with per-user isolation for every use case.
+- A dev seed, `npm run db:seed`: a demo user (demo@todo-cat.dev, password cat-person-2026) with about a dozen todos spread over the last two weeks, some done, some with due dates. Running it twice gives the same state.
+- You may refine architecture.md (pointers, gotchas). If you need to deviate from its principles, ask first. Add it to the AGENTS.md index.
+
+Done when the QA script is green. Then commit directly to main and push.
+```
+
+Rehearsal: TODO (headless, without plan mode).
+
+Demo:
+
+```bash
+git diff HEAD~1 -- tech-docs/architecture.md     # what the agent added to our article
+npm run db:reset && npm run db:seed
+sqlite3 data/app.db "select title, done, due_date, created_at from todos order by created_at" 2>/dev/null \
+  || npx drizzle-kit studio
+```
+
+- **Three artifacts, three jobs:** the architecture says *how* we build (human, before
+  the session), the prompt says *what* to do now, the tech docs record what the agent
+  learned. The prompt got short because the rules live in the article.
+- Agents default to generic CRUD and repositories, because that's their training data.
+  An explicit architecture and an explicit "deliberately not done" override the default.
+- **Plan mode** is where you catch a wrong turn for the price of reading a page. Look
+  for: does the plan put the user id into every function? Does it invent a repository?
+- **Isolation tests per use case**: two users, every operation. That's the
+  authorization test suite for every adapter that comes later.
+- "Ask first if you deviate" turns silent drift into a question.
+- The seed gives the afternoon a realistic list, including "last week".
+
+If it breaks: plan looks wrong → say what's wrong in plan mode, don't approve and fix later.
