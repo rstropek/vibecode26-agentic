@@ -41,6 +41,8 @@ API list prices from `claude -p`, less with a subscription.
 | 21 | Lissie | 20.5 min | 131 | $9.46 |
 | 21b | chat contrast fix | 4.9 min | 33 | $1.25 |
 | 23 | tool calling + PR | 15.5 min | 109 | $5.82 |
+| 25 | first design + todo list | 19.4 min | 85 | $4.69 |
+| 25b | `impeccable init` | 1.9 min | 11 | $0.52 |
 
 ## Before the workshop
 
@@ -1123,3 +1125,66 @@ Merge from inside the session, so the agent sees what you see:
 
 If it breaks: merge blocked although green → the check name must match the job name
 (`gh pr checks` shows it).
+
+## Step 25: a first design with `frontend-design`
+
+**Goal:** one deliberate aesthetic direction, and the web UI the description promises: a
+real todo list next to the chat. It also gives impeccable something to work on.
+
+```bash
+git switch -c first-design
+```
+
+<!-- prompt: step25 -->
+```text
+Use the frontend-design skill to give todo-cat its first real design: one deliberate aesthetic direction for a to-do list kept by a cat with attitude. Name the direction and its key choices (type, color, layout, one signature detail) before you build.
+
+- A real todo list next to the chat, on the todo service: add (with an optional due date), check off, reopen, and delete with a confirmation. It replaces the read-only sidebar and still refreshes when Lissie changes something. Same adapter rules as everything else (tech-docs/architecture.md).
+- The header, the auth pages, the device page, and the chat follow the same design, in light and dark mode, at desktop and phone width.
+- Check the result yourself in screenshots of the running app before you commit.
+- Tests: Playwright for add, check off, and delete on the list.
+- Write tech-docs/ui.md: the direction, where tokens and shared components live, the CopilotKit styling gotchas.
+
+Done when the QA script is green. Commit on the current branch, push, and open a pull request against main.
+```
+
+Rehearsal: 19.4 min, 85 turns, $4.69. Direction "Scratched off", Lissie's ledger: plum ink
+on lilac-grey paper, her amber eye color for focus and checkboxes, rose (her nose) for
+overdue and delete, one type family in two voices, and the signature detail: checking a
+todo draws three amber claw marks across it. Screenshots at 1440 and 390 px in light and
+dark; one fix round (claw marks on two-line titles).
+
+Then merge (step 24's rhythm) and capture the product context for impeccable, in a fresh
+session on `main`:
+
+<!-- prompt: step25b -->
+```text
+/impeccable init todo-cat is a to-do list web app kept by Lissie, a cat with attitude (dry, superior, secretly caring). Users are busy people with a cat and too many errands; they add, check off, and ask Lissie about their list, on desktop and phone. Lissie also has a CLI and an MCP server for agents. Take the rest from the code and tech-docs/ui.md. Don't change the UI yet. Commit directly to main and push.
+```
+
+Rehearsal 25b: 1.9 min, 11 turns, $0.52. Wrote `PRODUCT.md`, marked what it inferred,
+and corrected the brief from the repo: the MCP server doesn't exist yet, so it went in as
+planned. Headless, impeccable couldn't interview; on stage it asks you questions.
+
+Demo:
+
+```bash
+npm run dev
+gh pr view --web                         # the description names the direction
+cat tech-docs/ui.md
+ls .impeccable* PRODUCT.md DESIGN.md 2>/dev/null
+```
+
+- **Concrete direction beats adjectives.** "Make it nice" or "avoid an AI look" gives
+  you one of the model's few default styles. A named direction with its type, color,
+  layout, and one signature detail is something you can review.
+- `frontend-design` already fired by itself on the login pages in step 11. This time
+  we ask for it, and ask it to commit to a direction before building.
+- The list is one more adapter on the todo service. Check the diff: server actions or
+  REST, but no new queries.
+- **The agent checks its own UI in screenshots.** Tests don't see CSS (step 21b).
+- `impeccable init` writes the product context (who, what, tone) that its later
+  commands (`critique`, `polish`) read. Context is a file, not a prompt you repeat.
+
+If it breaks: the new design ignores the chat → CopilotKit ships its own CSS; point the
+agent at the gotchas in `tech-docs/agent.md`.
